@@ -185,4 +185,24 @@ static inline uint32_t fscrypt_validate_encryption_key_size(uint32_t mode,
 		return size;
 	return 0;
 }
+
+/* crypto.c */
+extern struct kmem_cache *fscrypt_info_cachep;
+
+struct page *fscrypt_encrypt_page(struct inode *, struct page *);
+int fscrypt_decrypt_page(struct inode *, struct page *);
+int fscrypt_zeroout_range(struct inode *, pgoff_t, sector_t, unsigned int);
+void fscrypt_end_io_crypto_work(struct fscrypt_ctx *, struct bio *);
+struct fscrypt_ctx *fscrypt_get_ctx(struct inode *);
+void fscrypt_release_ctx(struct fscrypt_ctx *);
+
+#ifdef CONFIG_FS_ENCRYPTION
+void fscrypt_restore_and_release_control_page(struct page **);
+void fscrypt_restore_control_page(struct page *);
+
+int fscrypt_initialize(void);
+#else
+static inline void fscrypt_restore_and_release_control_page(struct page **p) { }
+static inline void fscrypt_restore_control_page(struct page *p) { }
+#endif
 #endif	/* _LINUX_FSCRYPTO_H */
