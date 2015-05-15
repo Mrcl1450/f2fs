@@ -212,4 +212,19 @@ int fscrypt_get_policy(struct inode *, struct fscrypt_policy *);
 int fscrypt_has_permitted_context(struct inode *, struct inode *);
 int fscrypt_inherit_context(struct inode *, struct inode *, void *);
 
+/* keyinfo.c */
+void fscrypt_put_encryption_info(struct inode *, struct fscrypt_info *);
+
+#ifdef CONFIG_FS_ENCRYPTION
+int get_crypt_info(struct inode *);
+int fscrypt_get_encryption_info(struct inode *);
+
+static inline int fscrypt_has_encryption_key(struct inode *inode)
+{
+	return (inode->i_crypt_info != NULL);
+}
+#else
+static inline int fscrypt_get_encryption_info(struct inode *inode) { return 0; }
+static inline int fscrypt_has_encryption_key(struct inode *inode) { return 0; }
+#endif
 #endif	/* _LINUX_FSCRYPTO_H */
