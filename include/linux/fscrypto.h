@@ -205,4 +205,11 @@ int fscrypt_initialize(void);
 static inline void fscrypt_restore_and_release_control_page(struct page **p) { }
 static inline void fscrypt_restore_control_page(struct page *p) { }
 #endif
+
+/* policy.c */
+int fscrypt_process_policy(struct inode *, const struct fscrypt_policy *);
+int fscrypt_get_policy(struct inode *, struct fscrypt_policy *);
+int fscrypt_has_permitted_context(struct inode *, struct inode *);
+int fscrypt_inherit_context(struct inode *, struct inode *, void *);
+
 #endif	/* _LINUX_FSCRYPTO_H */
