@@ -52,6 +52,7 @@ struct seq_file;
 struct workqueue_struct;
 struct iov_iter;
 struct vm_fault;
+struct fscrypt_info;
 
 extern void __init inode_init(void);
 extern void __init inode_init_early(void);
@@ -675,6 +676,10 @@ struct inode {
 	struct hlist_head	i_fsnotify_marks;
 #endif
 
+#ifdef CONFIG_FS_ENCRYPTION
+	struct fscrypt_info	*i_crypt_info;
+#endif
+
 	void			*i_private; /* fs or device private pointer */
 };
 
@@ -1248,6 +1253,11 @@ extern int send_sigurg(struct fown_struct *fown);
 struct mm_struct;
 
 /*
+ * Includes for fs encryption.
+ */
+#include <linux/fscrypto.h>
+
+/*
  *	Umount options
  */
 
@@ -1308,6 +1318,9 @@ struct super_block {
 #endif
 	const struct xattr_handler **s_xattr;
 
+#ifdef CONFIG_FS_ENCRYPTION
+	const struct fscrypt_operations	*s_cop;
+#endif
 	struct list_head	s_inodes;	/* all inodes */
 	struct hlist_bl_head	s_anon;		/* anonymous dentries for (nfs) exporting */
 	struct list_head	s_mounts;	/* list of mounts; _not_ for fs use */
