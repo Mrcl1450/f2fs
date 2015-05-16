@@ -157,6 +157,26 @@ static inline u32 encrypted_symlink_data_len(u32 l)
 	return (l + sizeof(struct fs_encrypted_symlink_data) - 1);
 }
 
+struct fscrypt_str {
+	unsigned char *name;
+	u32 len;
+};
+
+struct fscrypt_name {
+	const struct qstr *usr_fname;
+	struct fscrypt_str disk_name;
+	u32 hash;
+	u32 minor_hash;
+#ifdef CONFIG_FS_ENCRYPTION
+	struct fscrypt_str crypto_buf;
+#endif
+};
+
+#define FSTR_INIT(n, l)		{ .name = n, .len = l }
+#define FSTR_TO_QSTR(f)		QSTR_INIT((f)->name, (f)->len)
+#define fname_name(p)		((p)->disk_name.name)
+#define fname_len(p)		((p)->disk_name.len)
+
 /*
  * crypto opertions for filesystems
  */
@@ -184,6 +204,22 @@ static inline uint32_t fscrypt_validate_encryption_key_size(uint32_t mode,
 	if (size == fscrypt_key_size(mode))
 		return size;
 	return 0;
+}
+
+static inline uint32_t fscrypt_blocksize_round_up(size_t size, size_t blksize)
+{
+	return ((size + blksize - 1) / blksize) * blksize;
+}
+
+static inline bool fscrypt_is_dot_dotdot(const struct qstr *str)
+{
+	if (str->len == 1 && str->name[0] == '.')
+		return true;
+
+	if (str->len == 2 && str->name[0] == '.' && str->name[1] == '.')
+		return true;
+
+	return false;
 }
 
 /* crypto.c */
@@ -226,5 +262,34 @@ static inline int fscrypt_has_encryption_key(struct inode *inode)
 #else
 static inline int fscrypt_get_encryption_info(struct inode *inode) { return 0; }
 static inline int fscrypt_has_encryption_key(struct inode *inode) { return 0; }
+#endif
+
+/* fname.c */
+int fscrypt_fname_crypto_alloc_buffer(struct inode *, u32,
+			struct fscrypt_str *);
+int fscrypt_fname_disk_to_usr(struct inode *, u32, u32,
+			const struct fscrypt_str *, struct fscrypt_str *);
+int fscrypt_fname_usr_to_disk(struct inode *, const struct qstr *,
+			struct fscrypt_str *);
+
+#ifdef CONFIG_FS_ENCRYPTION
+void fscrypt_fname_free_buffer(struct fscrypt_str *);
+void fscrypt_fname_free_filename(struct fscrypt_name *);
+int fscrypt_fname_setup_filename(struct inode *, const struct qstr *,
+				int lookup, struct fscrypt_name *);
+#else
+static inline void fscrypt_fname_free_buffer(struct fscrypt_str *p) { }
+static inline void fscrypt_fname_free_filename(struct fscrypt_name *fname) { }
+
+static inline int fscrypt_fname_setup_filename(struct inode *dir,
+					const struct qstr *iname,
+					int lookup, struct fscrypt_name *fname)
+{
+	memset(fname, 0, sizeof(struct fscrypt_name));
+	fname->usr_fname = iname;
+	fname->disk_name.name = (unsigned char *)iname->name;
+	fname->disk_name.len = iname->len;
+	return 0;
+}
 #endif
 #endif	/* _LINUX_FSCRYPTO_H */
