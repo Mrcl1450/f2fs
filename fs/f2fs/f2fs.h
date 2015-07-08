@@ -20,6 +20,7 @@
 #include <linux/kobject.h>
 #include <linux/sched.h>
 #include <linux/bio.h>
+#include <linux/fscrypto.h>
 
 #ifdef CONFIG_F2FS_CHECK_FS
 #define f2fs_bug_on(sbi, condition)	BUG_ON(condition)
@@ -259,25 +260,6 @@ static inline bool __has_cursum_space(struct f2fs_summary_block *sum, int size,
  * For INODE and NODE manager
  */
 /* for directory operations */
-struct f2fs_str {
-	unsigned char *name;
-	u32 len;
-};
-
-struct f2fs_filename {
-	const struct qstr *usr_fname;
-	struct f2fs_str disk_name;
-	f2fs_hash_t hash;
-#ifdef CONFIG_F2FS_FS_ENCRYPTION
-	struct f2fs_str crypto_buf;
-#endif
-};
-
-#define FSTR_INIT(n, l)		{ .name = n, .len = l }
-#define FSTR_TO_QSTR(f)		QSTR_INIT((f)->name, (f)->len)
-#define fname_name(p)		((p)->disk_name.name)
-#define fname_len(p)		((p)->disk_name.len)
-
 struct f2fs_dentry_ptr {
 	struct inode *inode;
 	const void *bitmap;
@@ -401,15 +383,6 @@ struct f2fs_map_blocks {
 #define file_enc_name(inode)	is_file(inode, FADVISE_ENC_NAME_BIT)
 #define file_set_enc_name(inode) set_file(inode, FADVISE_ENC_NAME_BIT)
 
-/* Encryption algorithms */
-#define F2FS_ENCRYPTION_MODE_INVALID		0
-#define F2FS_ENCRYPTION_MODE_AES_256_XTS	1
-#define F2FS_ENCRYPTION_MODE_AES_256_GCM	2
-#define F2FS_ENCRYPTION_MODE_AES_256_CBC	3
-#define F2FS_ENCRYPTION_MODE_AES_256_CTS	4
-
-#include "f2fs_crypto.h"
-
 #define DEF_DIR_LEVEL		0
 
 struct f2fs_inode_info {
@@ -433,13 +406,7 @@ struct f2fs_inode_info {
 
 	struct list_head inmem_pages;	/* inmemory pages managed by f2fs */
 	struct mutex inmem_lock;	/* lock for inmemory pages */
-
 	struct extent_tree *extent_tree;	/* cached extent_tree entry */
-
-#ifdef CONFIG_F2FS_FS_ENCRYPTION
-	/* Encryption params */
-	struct f2fs_crypt_info *i_crypt_info;
-#endif
 };
 
 static inline void get_extent_info(struct extent_info *ext,
@@ -2070,87 +2037,4 @@ static inline bool f2fs_may_encrypt(struct inode *inode)
 	return 0;
 #endif
 }
-
-/* crypto_policy.c */
-int f2fs_is_child_context_consistent_with_parent(struct inode *,
-							struct inode *);
-int f2fs_inherit_context(struct inode *, struct inode *, struct page *);
-int f2fs_process_policy(const struct f2fs_encryption_policy *, struct inode *);
-int f2fs_get_policy(struct inode *, struct f2fs_encryption_policy *);
-
-/* crypt.c */
-extern struct kmem_cache *f2fs_crypt_info_cachep;
-bool f2fs_valid_contents_enc_mode(uint32_t);
-uint32_t f2fs_validate_encryption_key_size(uint32_t, uint32_t);
-struct f2fs_crypto_ctx *f2fs_get_crypto_ctx(struct inode *);
-void f2fs_release_crypto_ctx(struct f2fs_crypto_ctx *);
-struct page *f2fs_encrypt(struct inode *, struct page *);
-int f2fs_decrypt(struct f2fs_crypto_ctx *, struct page *);
-int f2fs_decrypt_one(struct inode *, struct page *);
-void f2fs_end_io_crypto_work(struct f2fs_crypto_ctx *, struct bio *);
-
-/* crypto_key.c */
-void f2fs_free_encryption_info(struct inode *, struct f2fs_crypt_info *);
-int _f2fs_get_encryption_info(struct inode *inode);
-
-/* crypto_fname.c */
-bool f2fs_valid_filenames_enc_mode(uint32_t);
-u32 f2fs_fname_crypto_round_up(u32, u32);
-int f2fs_fname_crypto_alloc_buffer(struct inode *, u32, struct f2fs_str *);
-int f2fs_fname_disk_to_usr(struct inode *, f2fs_hash_t *,
-			const struct f2fs_str *, struct f2fs_str *);
-int f2fs_fname_usr_to_disk(struct inode *, const struct qstr *,
-			struct f2fs_str *);
-
-#ifdef CONFIG_F2FS_FS_ENCRYPTION
-void f2fs_restore_and_release_control_page(struct page **);
-void f2fs_restore_control_page(struct page *);
-
-int __init f2fs_init_crypto(void);
-int f2fs_crypto_initialize(void);
-void f2fs_exit_crypto(void);
-
-int f2fs_has_encryption_key(struct inode *);
-
-static inline int f2fs_get_encryption_info(struct inode *inode)
-{
-	struct f2fs_crypt_info *ci = F2FS_I(inode)->i_crypt_info;
-
-	if (!ci ||
-		(ci->ci_keyring_key &&
-		 (ci->ci_keyring_key->flags & ((1 << KEY_FLAG_INVALIDATED) |
-					       (1 << KEY_FLAG_REVOKED) |
-					       (1 << KEY_FLAG_DEAD)))))
-		return _f2fs_get_encryption_info(inode);
-	return 0;
-}
-
-void f2fs_fname_crypto_free_buffer(struct f2fs_str *);
-int f2fs_fname_setup_filename(struct inode *, const struct qstr *,
-				int lookup, struct f2fs_filename *);
-void f2fs_fname_free_filename(struct f2fs_filename *);
-#else
-static inline void f2fs_restore_and_release_control_page(struct page **p) { }
-static inline void f2fs_restore_control_page(struct page *p) { }
-
-static inline int __init f2fs_init_crypto(void) { return 0; }
-static inline void f2fs_exit_crypto(void) { }
-
-static inline int f2fs_has_encryption_key(struct inode *i) { return 0; }
-static inline int f2fs_get_encryption_info(struct inode *i) { return 0; }
-static inline void f2fs_fname_crypto_free_buffer(struct f2fs_str *p) { }
-
-static inline int f2fs_fname_setup_filename(struct inode *dir,
-					const struct qstr *iname,
-					int lookup, struct f2fs_filename *fname)
-{
-	memset(fname, 0, sizeof(struct f2fs_filename));
-	fname->usr_fname = iname;
-	fname->disk_name.name = (unsigned char *)iname->name;
-	fname->disk_name.len = iname->len;
-	return 0;
-}
-
-static inline void f2fs_fname_free_filename(struct f2fs_filename *fname) { }
-#endif
 #endif

@@ -831,6 +831,13 @@ static struct super_operations f2fs_sops = {
 	.remount_fs	= f2fs_remount,
 };
 
+#ifdef CONFIG_F2FS_FS_ENCRYPTION
+
+static struct fscrypt_operations f2fs_cryptops = {
+	.get_context	= f2fs_get_context,
+};
+#endif
+
 static struct inode *f2fs_nfs_get_inode(struct super_block *sb,
 		u64 ino, u32 generation)
 {
