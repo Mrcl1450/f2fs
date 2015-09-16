@@ -21,6 +21,7 @@
 #include <linux/mount.h>
 #include <linux/pagevec.h>
 #include <linux/random.h>
+#include <linux/aio.h>
 
 #include "f2fs.h"
 #include "node.h"
@@ -622,7 +623,7 @@ int f2fs_truncate(struct inode *inode, bool lock)
 int f2fs_getattr(struct vfsmount *mnt,
 			 struct dentry *dentry, struct kstat *stat)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	generic_fillattr(inode, stat);
 	stat->blocks <<= 3;
 	return 0;
@@ -661,7 +662,7 @@ static void __setattr_copy(struct inode *inode, const struct iattr *attr)
 
 int f2fs_setattr(struct dentry *dentry, struct iattr *attr)
 {
-	struct inode *inode = d_inode(dentry);
+	struct inode *inode = dentry->d_inode;
 	struct f2fs_inode_info *fi = F2FS_I(inode);
 	int err;
 
@@ -1207,6 +1208,8 @@ noalloc:
 	return ret;
 }
 
+#define FALLOC_FL_INSERT_RANGE		0X20
+
 static long f2fs_fallocate(struct file *file, int mode,
 				loff_t offset, loff_t len)
 {
@@ -1465,22 +1468,22 @@ static int f2fs_ioc_shutdown(struct file *filp, unsigned long arg)
 		return -EFAULT;
 
 	switch (in) {
-	case F2FS_GOING_DOWN_FULLSYNC:
+	case FS_GOING_DOWN_FULLSYNC:
 		sb = freeze_bdev(sb->s_bdev);
 		if (sb && !IS_ERR(sb)) {
 			f2fs_stop_checkpoint(sbi);
 			thaw_bdev(sb->s_bdev, sb);
 		}
 		break;
-	case F2FS_GOING_DOWN_METASYNC:
+	case FS_GOING_DOWN_METASYNC:
 		/* do checkpoint only */
 		f2fs_sync_fs(sb, 1);
 		f2fs_stop_checkpoint(sbi);
 		break;
-	case F2FS_GOING_DOWN_NOSYNC:
+	case FS_GOING_DOWN_NOSYNC:
 		f2fs_stop_checkpoint(sbi);
 		break;
-	case F2FS_GOING_DOWN_METAFLUSH:
+	case FS_GOING_DOWN_METAFLUSH:
 		sync_meta_pages(sbi, META, LONG_MAX);
 		f2fs_stop_checkpoint(sbi);
 		break;
@@ -1665,7 +1668,7 @@ long f2fs_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		return f2fs_ioc_release_volatile_write(filp);
 	case F2FS_IOC_ABORT_VOLATILE_WRITE:
 		return f2fs_ioc_abort_volatile_write(filp);
-	case F2FS_IOC_SHUTDOWN:
+	case FS_IOC_SHUTDOWN:
 		return f2fs_ioc_shutdown(filp, arg);
 	case FITRIM:
 		return f2fs_ioc_fitrim(filp, arg);

@@ -12,6 +12,7 @@
 #include <linux/f2fs_fs.h>
 #include <linux/buffer_head.h>
 #include <linux/mpage.h>
+#include <linux/aio.h>
 #include <linux/writeback.h>
 #include <linux/backing-dev.h>
 #include <linux/pagevec.h>
@@ -27,13 +28,13 @@
 #include "trace.h"
 #include <trace/events/f2fs.h>
 
-static void f2fs_read_end_io(struct bio *bio)
+static void f2fs_read_end_io(struct bio *bio, int err)
 {
 	struct bio_vec *bvec;
 	int i;
 
 	if (f2fs_bio_encrypted(bio)) {
-		if (bio->bi_error) {
+		if (err) {
 			f2fs_release_crypto_ctx(bio->bi_private);
 		} else {
 			f2fs_end_io_crypto_work(bio->bi_private, bio);
@@ -44,7 +45,7 @@ static void f2fs_read_end_io(struct bio *bio)
 	bio_for_each_segment_all(bvec, bio, i) {
 		struct page *page = bvec->bv_page;
 
-		if (!bio->bi_error) {
+		if (!err) {
 			SetPageUptodate(page);
 		} else {
 			ClearPageUptodate(page);
@@ -55,7 +56,7 @@ static void f2fs_read_end_io(struct bio *bio)
 	bio_put(bio);
 }
 
-static void f2fs_write_end_io(struct bio *bio)
+static void f2fs_write_end_io(struct bio *bio, int err)
 {
 	struct f2fs_sb_info *sbi = bio->bi_private;
 	struct bio_vec *bvec;
@@ -66,7 +67,7 @@ static void f2fs_write_end_io(struct bio *bio)
 
 		f2fs_restore_and_release_control_page(&page);
 
-		if (unlikely(bio->bi_error)) {
+		if (unlikely(err)) {
 			set_page_dirty(page);
 			set_bit(AS_EIO, &page->mapping->flags);
 			f2fs_stop_checkpoint(sbi);
@@ -973,7 +974,7 @@ submit_and_realloc:
 			}
 
 			bio = bio_alloc(GFP_KERNEL,
-				min_t(int, nr_pages, BIO_MAX_PAGES));
+				min_t(int, nr_pages, bio_get_nr_vecs(bdev)));
 			if (!bio) {
 				if (ctx)
 					f2fs_release_crypto_ctx(ctx);
@@ -1557,7 +1558,7 @@ static int check_direct_IO(struct inode *inode, struct iov_iter *iter,
 	return 0;
 }
 
-static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
+static ssize_t f2fs_direct_IO(int rw, struct kiocb *iocb, struct iov_iter *iter,
 			      loff_t offset)
 {
 	struct file *file = iocb->ki_filp;
@@ -1580,9 +1581,9 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 	if (err)
 		return err;
 
-	trace_f2fs_direct_IO_enter(inode, offset, count, iov_iter_rw(iter));
+	trace_f2fs_direct_IO_enter(inode, offset, count, rw);
 
-	if (iov_iter_rw(iter) == WRITE) {
+	if (rw & WRITE) {
 		__allocate_data_blocks(inode, offset, count);
 		if (unlikely(f2fs_cp_error(F2FS_I_SB(inode)))) {
 			err = -EIO;
@@ -1590,12 +1591,12 @@ static ssize_t f2fs_direct_IO(struct kiocb *iocb, struct iov_iter *iter,
 		}
 	}
 
-	err = blockdev_direct_IO(iocb, inode, iter, offset, get_data_block_dio);
+	err = blockdev_direct_IO(rw, iocb, inode, iter, offset, get_data_block_dio);
 out:
-	if (err < 0 && iov_iter_rw(iter) == WRITE)
+	if (err < 0 && (rw & WRITE))
 		f2fs_write_failed(mapping, offset + count);
 
-	trace_f2fs_direct_IO_exit(inode, offset, count, iov_iter_rw(iter), err);
+	trace_f2fs_direct_IO_exit(inode, offset, count, rw, err);
 
 	return err;
 }
